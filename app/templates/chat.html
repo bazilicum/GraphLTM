@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Chat - Knowledge Base System{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="messages" id="messages">
+        <!-- Messages will be added here dynamically -->
+    </div>
+    <div class="chat-options">
+        <label class="switch">
+            <input type="checkbox" id="saveToMemorySwitch" {% if save_to_memory_default %}checked{% endif %}>
+            <span class="slider"></span>
+        </label>
+        <span class="switch-label">Save to long-term memory</span>
+    </div>
+    <div class="chat-input-container">
+        <textarea id="messageInput" placeholder="Type your message..." rows="3"></textarea>
+        <button id="sendButton" onclick="sendMessage()">
+            <i class="fas fa-paper-plane"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Loading Spinner Template -->
+<template id="loadingSpinner">
+    <div class="message assistant-message">
+        <div class="message-content">
+            <div class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </div>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function formatMessage(text) {
+        const segments = [];
+        // Bold: **text** to <strong>text</strong> (robust, multiline)
+        const boldRegex = /\*\*([\s\S]+?)\*\*/g;
+        let lastIndex = 0;
+        let match;
+        
+        while ((match = boldRegex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                segments.push({ text: text.slice(lastIndex, match.index), type: 'text' });
+            }
+            segments.push({ text: match[1], type: 'bold' });
+            lastIndex = boldRegex.lastIndex;
+        }
+        if (lastIndex < text.length) {
+            segments.push({ text: text.slice(lastIndex), type: 'text' });
+        }
+        
+        return segments;
+    }
+
+    function addMessage(content, isUser = false) {
+        const messagesDiv = document.getElementById('messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        
+        if (isUser) {
+            const segments = formatMessage(content);
+            segments.forEach(segment => {
+                if (segment.type === 'bold') {
+                    const strong = document.createElement('strong');
+                    strong.textContent = segment.text;
+                    contentDiv.appendChild(strong);
+                } else {
+                    const text = document.createTextNode(segment.text);
+                    contentDiv.appendChild(text);
+                }
+            });
+            messageDiv.appendChild(contentDiv);
+            messagesDiv.appendChild(messageDiv);
+        } else {
+            // For assistant messages, we'll add the content character by character
+            messageDiv.appendChild(contentDiv);
+            messagesDiv.appendChild(messageDiv);
+            typeMessage(contentDiv, content);
+        }
+        
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function typeMessage(element, text, speed = 10) {
+        // Parse text into segments: [{text: "...", bold: true/false}, ...]
+        const segments = [];
+        const regex = /\*\*([\s\S]+?)\*\*/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                segments.push({ text: text.slice(lastIndex, match.index), bold: false });
+            }
+            segments.push({ text: match[1], bold: true });
+            lastIndex = regex.lastIndex;
+        }
+        if (lastIndex < text.length) {
+            segments.push({ text: text.slice(lastIndex), bold: false });
+        }
+
+        // Typing animation
+        let segIdx = 0, charIdx = 0;
+        let currentNode = null;
+
+        function type() {
+            if (segIdx >= segments.length) return;
+
+            const seg = segments[segIdx];
+            if (charIdx === 0) {
+                // Start a new segment
+                if (seg.bold) {
+                    currentNode = document.createElement('strong');
+                    element.appendChild(currentNode);
+                } else {
+                    currentNode = document.createTextNode('');
+                    element.appendChild(currentNode);
+                }
+            }
+
+            if (charIdx < seg.text.length) {
+                if (seg.bold) {
+                    currentNode.textContent += seg.text[charIdx];
+                } else {
+                    currentNode.textContent += seg.text[charIdx];
+                }
+                charIdx++;
+                // Scroll to bottom
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                setTimeout(type, speed);
+            } else {
+                segIdx++;
+                charIdx = 0;
+                type();
+            }
+        }
+        type();
+    }
+
+    function addLoadingSpinner() {
+        const messagesDiv = document.getElementById('messages');
+        const template = document.getElementById('loadingSpinner');
+        const spinner = template.content.cloneNode(true);
+        messagesDiv.appendChild(spinner);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function removeLoadingSpinner() {
+        const spinner = document.querySelector('.typing-indicator').closest('.message');
+        if (spinner) {
+            spinner.remove();
+        }
+    }
+
+    function sendMessage() {
+        const messageInput = document.getElementById('messageInput');
+        const message = messageInput.value.trim();
+        const saveToMemory = document.getElementById('saveToMemorySwitch').checked;
+
+        
+        if (message) {
+            // Add user message to chat
+            addMessage(message, true);
+            
+            // Clear input
+            messageInput.value = '';
+            
+            // Add loading spinner
+            addLoadingSpinner();
+            
+            // Send to server
+            fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message: message, save_to_memory: saveToMemory })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Remove loading spinner
+                removeLoadingSpinner();
+                
+                if (data.error) {
+                    addMessage('Error: ' + data.error);
+                } else {
+                    addMessage(data.response);
+                }
+            })
+            .catch(error => {
+                // Remove loading spinner
+                removeLoadingSpinner();
+                addMessage('Error: ' + error);
+            });
+        }
+    }
+
+    // Handle Enter key (Shift+Enter for new line)
+    document.getElementById('messageInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // Auto-resize textarea
+    const textarea = document.getElementById('messageInput');
+    textarea.addEventListener('input', function() {
+        this.style.height = 'auto';
+        const newHeight = Math.min(this.scrollHeight, 100); // Max height of 3 lines
+        this.style.height = newHeight + 'px';
+    });
+</script>
+{% endblock %} 

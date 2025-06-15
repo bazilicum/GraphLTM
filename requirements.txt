@@ -1,0 +1,15 @@
+requests
+hf_xet
+nltk
+sentence-transformers 
+transformers 
+accelerate
+neo4j
+matplotlib
+Flask
+Flask-SocketIO 
+PDFPlumber
+python-bidi
+faiss-cpu
+tiktoken
+openai

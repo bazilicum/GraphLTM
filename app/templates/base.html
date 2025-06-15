@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Knowledge Base System{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="header">
+        <h1>GraphLTM Ver 1.0</h1>
+    </div>
+    
+    <div class="tabs">
+        <a href="{{ url_for('chat') }}" class="tab {% if active_tab == 'chat' %}active{% endif %}">
+            <i class="fas fa-comments"></i> Chat
+        </a>
+        <a href="{{ url_for('upload_pdf') }}" class="tab {% if active_tab == 'upload' %}active{% endif %}">
+            <i class="fas fa-file-upload"></i> Upload PDF
+        </a>
+    </div>
+    
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html> 

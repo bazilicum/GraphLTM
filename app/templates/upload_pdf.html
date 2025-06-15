@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block title %}Upload PDF - Knowledge Base System{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/upload.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="upload-container">
+    <!-- Upload Form Section -->
+    <div class="upload-section">
+        <h2>Upload New PDF</h2>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="source">Source Name:</label>
+                <input type="text" id="source" name="source" required>
+            </div>
+            <div class="form-group">
+                <label for="source_file">PDF File:</label>
+                <input type="file" id="source_file" name="source_file" accept=".pdf" required>
+            </div>
+            <button type="submit" class="upload-btn" id="uploadButton">
+                <i class="fas fa-upload"></i> Upload PDF
+            </button>
+        </form>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="progress-container" style="display: none;">
+        <div class="progress-bar">
+            <div class="progress" id="uploadProgress"></div>
+        </div>
+        <div class="status-message" id="statusMessage"></div>
+    </div>
+
+    <!-- Sources List Section -->
+    <div class="sources-section">
+        <h2>Available Sources</h2>
+        <div class="sources-list" id="sourcesList">
+            {% if sources %}
+                {% for source in sources %}
+                <div class="source-item">
+                    <span class="source-name">{{ source }}</span>
+                    <button class="delete-btn" onclick="deleteSource('{{ source }}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="no-sources">No sources available</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Modal for status messages -->
+<div class="modal" id="status-modal" style="display:none;">
+  <div class="modal-content">
+    <h2 id="modal-title">Status</h2>
+    <p id="modal-message"></p>
+    <div id="modal-action-buttons"></div>
+    <button id="close-modal">Close</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+<script>
+    function updateSourcesList() {
+        fetch('/api/sources')
+            .then(response => response.json())
+            .then(data => {
+                const sourcesList = document.getElementById('sourcesList');
+                sourcesList.innerHTML = ''; // Clear existing content
+                
+                if (data.sources && data.sources.length > 0) {
+                    data.sources.forEach(source => {
+                        const sourceItem = document.createElement('div');
+                        sourceItem.className = 'source-item';
+                        
+                        const sourceName = document.createElement('span');
+                        sourceName.className = 'source-name';
+                        sourceName.textContent = source;
+                        
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'delete-btn';
+                        deleteBtn.onclick = () => deleteSource(source);
+                        
+                        const trashIcon = document.createElement('i');
+                        trashIcon.className = 'fas fa-trash';
+                        
+                        deleteBtn.appendChild(trashIcon);
+                        sourceItem.appendChild(sourceName);
+                        sourceItem.appendChild(deleteBtn);
+                        sourcesList.appendChild(sourceItem);
+                    });
+                } else {
+                    const noSources = document.createElement('p');
+                    noSources.className = 'no-sources';
+                    noSources.textContent = 'No sources available';
+                    sourcesList.appendChild(noSources);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching sources:', error);
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        updateSourcesList(); // Initial load of sources
+
+        const socket = io();
+        const form = document.getElementById('uploadForm');
+        const uploadButton = document.getElementById('uploadButton');
+        const progressContainer = document.querySelector('.progress-container');
+        const progressBar = document.getElementById('uploadProgress');
+        const statusMessage = document.getElementById('statusMessage');
+        
+        const modal = document.getElementById('status-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const closeModalButton = document.getElementById('close-modal');
+
+        uploadButton.disabled = true;
+
+        socket.on('connect', () => {
+            uploadButton.disabled = false;
+            statusMessage.textContent = 'Connected. Ready to upload.';
+        });
+
+        socket.on('disconnect', () => {
+            uploadButton.disabled = true;
+            statusMessage.textContent = 'Disconnected from server.';
+        });
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const source = document.getElementById('source').value.trim();
+            const fileInput = document.getElementById('source_file');
+            const file = fileInput.files[0];
+
+            if (!source) {
+                displayModal('Error', 'Please enter a source name.');
+                return;
+            }
+
+            if (!file) {
+                displayModal('Error', 'Please select a PDF file to upload.');
+                return;
+            }
+
+            if (!socket.connected) {
+                displayModal('Error', 'Not connected to the server.');
+                return;
+            }
+
+            uploadButton.disabled = true;
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            statusMessage.textContent = 'Uploading...';
+
+            const formData = new FormData();
+            formData.append('source', source);
+            formData.append('source_file', file);
+            formData.append('socket_id', socket.id);
+
+            fetch('/upload_pdf', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    statusMessage.textContent = `Error: ${data.error}`;
+                    uploadButton.disabled = false;
+                } else {
+                    statusMessage.textContent = 'Upload successful! Processing started.';
+                }
+            })
+            .catch(error => {
+                statusMessage.textContent = `Error: ${error}`;
+                uploadButton.disabled = false;
+            });
+        });
+
+        socket.on('status', data => {
+            statusMessage.textContent = data.message;
+        });
+
+        socket.on('processing_progress', data => {
+            const progress = Math.min(data.progress, 100);
+            progressBar.style.width = `${progress}%`;
+            statusMessage.textContent = `Processing: ${Math.round(progress)}% completed.`;
+        });
+
+        socket.on('upload_progress', data => {
+            const progress = Math.min(data.progress, 100);
+            progressBar.style.width = `${progress}%`;
+            statusMessage.textContent = `Uploading: ${Math.round(progress)}% completed.`;
+        });
+
+        socket.on('processing_complete', data => {
+            progressBar.style.width = '100%';
+            statusMessage.textContent = data.message;
+            uploadButton.disabled = false;
+            // Hide progress container after a short delay
+            setTimeout(() => {
+                progressContainer.style.display = 'none';
+                progressBar.style.width = '0%';
+            }, 2000);
+            // Update sources list instead of reloading the page
+            updateSourcesList();
+            // Clear the form
+            form.reset();
+        });
+
+        socket.on('processing_error', data => {
+            progressContainer.style.display = 'none';
+            statusMessage.textContent = `Error: ${data.message}`;
+            uploadButton.disabled = false;
+            // Display error in modal for better visibility
+            displayModal('Processing Error', data.message);
+        });
+    });
+
+    function displayModal(title, message, callback = null, showCancel = false) {
+        const modal = document.getElementById('status-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const closeModalButton = document.getElementById('close-modal');
+        
+        // Clear previous action buttons and event listeners to prevent duplicates
+        const existingConfirmButton = document.getElementById('confirm-action');
+        if (existingConfirmButton) {
+            existingConfirmButton.remove();
+        }
+        const existingCancelButton = document.getElementById('cancel-action');
+        if (existingCancelButton) {
+            existingCancelButton.remove();
+        }
+
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+
+        // Get the new action buttons container
+        const actionButtonsContainer = document.getElementById('modal-action-buttons');
+        actionButtonsContainer.innerHTML = ''; // Clear any previous buttons
+
+        if (callback) { // This is a confirmation modal
+            closeModalButton.style.display = 'none'; // Hide the default close button
+
+            const confirmButton = document.createElement('button');
+            confirmButton.id = 'confirm-action';
+            confirmButton.textContent = 'Confirm Delete';
+            confirmButton.onclick = () => {
+                modal.style.display = 'none'; // Hide confirmation modal
+                callback(); // Execute the callback (e.g., actual delete fetch)
+            };
+            actionButtonsContainer.appendChild(confirmButton); // Append to the new container
+
+            if (showCancel) {
+                const cancelButton = document.createElement('button');
+                cancelButton.id = 'cancel-action';
+                cancelButton.textContent = 'Cancel';
+                cancelButton.onclick = () => {
+                    modal.style.display = 'none';
+                };
+                actionButtonsContainer.appendChild(cancelButton); // Append to the new container
+            }
+            // Ensure the action buttons container is visible if it was hidden
+            actionButtonsContainer.style.display = 'flex'; // Ensure flex display when buttons are added
+        } else { // This is a status/result modal
+            closeModalButton.style.display = 'block'; // Show the default close button
+            closeModalButton.textContent = 'Close'; // Ensure text is 'Close'
+            closeModalButton.onclick = () => {
+                modal.style.display = 'none';
+                updateSourcesList(); // Update list on close for general status messages
+            };
+            actionButtonsContainer.style.display = 'none'; // Hide the action buttons container for status modal
+        }
+        modal.style.display = 'flex';
+    }
+
+    // Modify deleteSource to use the custom modal for confirmation
+    function deleteSource(source) {
+        displayModal(
+            'Confirm Deletion',
+            `Are you sure you want to delete the source "${source}"?`,
+            () => {
+                // This is the actual delete logic, moved into a callback
+                const formData = new FormData();
+                formData.append('source', source);
+
+                fetch('/delete_source', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Failed to delete source');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    displayModal('Success', data.message || 'Source deleted.', null, false);
+                    // Update the sources list after successful deletion
+                    updateSourcesList();
+                })
+                .catch(error => {
+                    displayModal('Error', 'An unexpected error occurred: ' + error, null, false);
+                });
+            },
+            true // Show cancel button
+        );
+    }
+</script>
+{% endblock %}

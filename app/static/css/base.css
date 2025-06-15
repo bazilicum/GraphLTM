@@ -1,0 +1,44 @@
+body { 
+    font-family: Arial, sans-serif; 
+    margin: 0; 
+    padding: 0; 
+    background-color: #f8f9fa; 
+}
+
+.header {
+    background-color: #343a40;
+    color: white;
+    padding: 1rem 2rem;
+    text-align: left;
+}
+
+.tabs {
+    background-color: #fff;
+    border-bottom: 1px solid #dee2e6;
+    padding: 0 2rem;
+    display: flex;
+    gap: 1rem;
+}
+
+.tab {
+    padding: 1rem 2rem;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    color: #495057;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.tab:hover {
+    color: #007bff;
+}
+
+.tab.active {
+    color: #007bff;
+    border-bottom-color: #007bff;
+}
+
+.content {
+    padding: 1px;
+} 
